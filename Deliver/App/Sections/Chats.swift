@@ -11,221 +11,298 @@ struct Chats: View {
     @State private var editingMessageID: String?
     @State private var editingText = ""
     @State private var isUploadingImage = false
+    @State private var fullscreenImageURL: URL?
+    @State private var isDownloadingImage = false
 
     private var selectedConvo: Conversation? {
         service.conversations.first { $0.convoID == selectedConvoID }
     }
 
     var body: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Chats")
-                        .font(.system(size: 18, weight: .semibold))
+        ZStack {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Chats")
+                            .font(.system(size: 18, weight: .semibold))
 
-                    Spacer()
+                        Spacer()
 
-                    Button {
-                        showAddAlert = true
-                    } label: {
-                        Image(systemName: "plus")
+                        Button {
+                            showAddAlert = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                Divider()
+                    Divider()
 
-                ScrollView {
-                    VStack(spacing: 10) {
-                        ForEach(service.conversations) { convo in
-                            HStack {
-                                Text(convo.convoName)
-                                    .font(.system(size: 16, weight: .regular))
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            ForEach(service.conversations) { convo in
+                                HStack {
+                                    Text(convo.convoName)
+                                        .font(.system(size: 16, weight: .regular))
 
-                                Spacer()
+                                    Spacer()
 
-                                Button {
-                                    Task {
-                                        await service.remove(conversationID: convo.id)
-                                        if selectedConvoID == convo.convoID {
-                                            selectedConvoID = nil
+                                    Button {
+                                        Task {
+                                            await service.remove(conversationID: convo.id)
+                                            if selectedConvoID == convo.convoID {
+                                                selectedConvoID = nil
+                                                service.setActiveConvo(nil)
+                                            }
                                         }
+                                    } label: {
+                                        Image(systemName: "trash")
                                     }
-                                } label: {
-                                    Image(systemName: "trash")
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(10)
-                            .frame(maxWidth: .infinity)
-                            .background(Color.white.opacity(selectedConvoID == convo.convoID ? 0.08 : 0.02))
-                            .cornerRadius(10)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                selectedConvoID = convo.convoID
-                                Task {
-                                    await service.loadMessages(convoID: convo.convoID)
+                                .padding(10)
+                                .frame(maxWidth: .infinity)
+                                .background(Color.white.opacity(selectedConvoID == convo.convoID ? 0.08 : 0.02))
+                                .cornerRadius(10)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    selectedConvoID = convo.convoID
+                                    service.setActiveConvo(convo.convoID)
+                                    Task {
+                                        await service.loadMessages(convoID: convo.convoID)
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-            .frame(width: 200)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
-            .padding(20)
-            .background(Color.white.opacity(0.03))
-            .cornerRadius(10)
+                .frame(width: 200)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .padding(20)
+                .background(Color.white.opacity(0.03))
+                .cornerRadius(10)
 
-            VStack(alignment: .leading, spacing: 10) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        ForEach(service.messages) { message in
-                            VStack(alignment: message.sender == currentUserID ? .trailing : .leading, spacing: 4) {
-                                if editingMessageID == message.id {
-                                    HStack {
-                                        TextField("Edit message", text: $editingText)
-                                            .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 10) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(service.messages) { message in
+                                VStack(alignment: message.sender == currentUserID ? .trailing : .leading, spacing: 4) {
+                                    if editingMessageID == message.id {
+                                        HStack {
+                                            TextField("Edit message", text: $editingText)
+                                                .textFieldStyle(.roundedBorder)
 
-                                        Button("Save") {
-                                            Task {
-                                                await service.edit(
-                                                    messageID: message.id,
-                                                    newText: editingText,
-                                                    convoID: message.convoID
-                                                )
+                                            Button("Save") {
+                                                Task {
+                                                    await service.edit(
+                                                        messageID: message.id,
+                                                        newText: editingText,
+                                                        convoID: message.convoID
+                                                    )
+                                                    editingMessageID = nil
+                                                }
+                                            }
+
+                                            Button("Cancel") {
                                                 editingMessageID = nil
                                             }
                                         }
-
-                                        Button("Cancel") {
-                                            editingMessageID = nil
-                                        }
-                                    }
-                                } else {
-                                    HStack {
-                                        if message.message.hasPrefix("img:"),
-                                           let url = URL(string: String(message.message.dropFirst(4))) {
-                                            AsyncImage(url: url) { phase in
-                                                switch phase {
-                                                case .success(let image):
-                                                    image
-                                                        .resizable()
-                                                        .scaledToFit()
-                                                        .frame(maxWidth: 220, maxHeight: 220)
-                                                        .cornerRadius(10)
-                                                case .failure:
-                                                    Image(systemName: "photo")
-                                                        .frame(width: 100, height: 100)
-                                                default:
-                                                    ProgressView()
-                                                        .frame(width: 100, height: 100)
+                                    } else {
+                                        HStack {
+                                            if message.message.hasPrefix("img:"),
+                                               let url = URL(string: String(message.message.dropFirst(4))) {
+                                                AsyncImage(url: url) { phase in
+                                                    switch phase {
+                                                    case .success(let image):
+                                                        image
+                                                            .resizable()
+                                                            .scaledToFit()
+                                                            .frame(maxWidth: 220, maxHeight: 220)
+                                                            .cornerRadius(10)
+                                                            .contentShape(Rectangle())
+                                                            .onTapGesture {
+                                                                fullscreenImageURL = url
+                                                            }
+                                                    case .failure:
+                                                        Image(systemName: "photo")
+                                                            .frame(width: 100, height: 100)
+                                                    default:
+                                                        ProgressView()
+                                                            .frame(width: 100, height: 100)
+                                                    }
                                                 }
+                                            } else {
+                                                Text(message.message)
+                                                    .padding(10)
+                                                    .background(Color.white.opacity(0.1))
+                                                    .cornerRadius(10)
                                             }
-                                        } else {
-                                            Text(message.message)
-                                                .padding(10)
-                                                .background(Color.white.opacity(0.1))
-                                                .cornerRadius(10)
-                                        }
 
-                                        if message.sender == currentUserID {
-                                            if !message.message.hasPrefix("img:") {
+                                            if message.sender == currentUserID {
+                                                if !message.message.hasPrefix("img:") {
+                                                    Button {
+                                                        editingMessageID = message.id
+                                                        editingText = message.message
+                                                    } label: {
+                                                        Image(systemName: "pencil")
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+
                                                 Button {
-                                                    editingMessageID = message.id
-                                                    editingText = message.message
+                                                    Task {
+                                                        await service.delete(
+                                                            messageID: message.id,
+                                                            convoID: message.convoID
+                                                        )
+                                                    }
                                                 } label: {
-                                                    Image(systemName: "pencil")
+                                                    Image(systemName: "trash")
                                                 }
                                                 .buttonStyle(.plain)
                                             }
-
-                                            Button {
-                                                Task {
-                                                    await service.delete(
-                                                        messageID: message.id,
-                                                        convoID: message.convoID
-                                                    )
-                                                }
-                                            } label: {
-                                                Image(systemName: "trash")
-                                            }
-                                            .buttonStyle(.plain)
                                         }
-                                    }
 
-                                    Text(formatted(message.date, sender: message.sender))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.gray)
+                                        Text(formatted(message.date, sender: message.sender))
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(.gray)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: message.sender == currentUserID ? .trailing : .leading)
+                            }
+                        }
+                    }
+
+                    if let convoID = selectedConvoID {
+                        HStack {
+                            Button {
+                                pickImage(convoID: convoID)
+                            } label: {
+                                if isUploadingImage {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "photo")
                                 }
                             }
-                            .frame(maxWidth: .infinity, alignment: message.sender == currentUserID ? .trailing : .leading)
+                            .buttonStyle(.plain)
+                            .disabled(isUploadingImage)
+
+                            TextField("Message...", text: $messageText)
+                                .textFieldStyle(.roundedBorder)
+
+                            Button("Send") {
+                                let text = messageText
+                                messageText = ""
+                                Task {
+                                    await service.send(text: text, convoID: convoID)
+                                }
+                            }
+                            .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
                 }
+                .frame(maxWidth: 400)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .padding(20)
+                .background(Color.white.opacity(0.03))
+                .cornerRadius(10)
+            }
+            .padding(10)
+            .frame(width: 800, height: 600, alignment: .topLeading)
+            .task {
+                await service.loadConversations()
+                service.startAutoRefresh()
+            }
+            .onDisappear {
+                service.stopAutoRefresh()
+            }
+            .alert("Add Conversation", isPresented: $showAddAlert) {
+                TextField("Username", text: $newUsername)
 
-                if let convoID = selectedConvoID {
-                    HStack {
-                        Button {
-                            pickImage(convoID: convoID)
-                        } label: {
-                            if isUploadingImage {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "photo")
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isUploadingImage)
-
-                        TextField("Message...", text: $messageText)
-                            .textFieldStyle(.roundedBorder)
-
-                        Button("Send") {
-                            let text = messageText
-                            messageText = ""
-                            Task {
-                                await service.send(text: text, convoID: convoID)
-                            }
-                        }
-                        .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Add") {
+                    let username = newUsername
+                    newUsername = ""
+                    Task {
+                        await service.startConversation(withUsername: username)
                     }
                 }
-            }
-            .frame(maxWidth: 400)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
-            .padding(20)
-            .background(Color.white.opacity(0.03))
-            .cornerRadius(10)
-        }
-        .padding(10)
-        .frame(width: 800, height: 600, alignment: .topLeading)
-        .task {
-            await service.loadConversations()
-        }
-        .alert("Add Conversation", isPresented: $showAddAlert) {
-            TextField("Username", text: $newUsername)
 
-            Button("Add") {
-                let username = newUsername
-                newUsername = ""
-                Task {
-                    await service.startConversation(withUsername: username)
+                Button("Cancel", role: .cancel) {
+                    newUsername = ""
                 }
             }
-
-            Button("Cancel", role: .cancel) {
-                newUsername = ""
+            .alert("Error", isPresented: Binding(
+                get: { !service.errorMessage.isEmpty },
+                set: { _ in service.errorMessage = "" }
+            )) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(service.errorMessage)
             }
-        }
-        .alert("Error", isPresented: Binding(
-            get: { !service.errorMessage.isEmpty },
-            set: { _ in service.errorMessage = "" }
-        )) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(service.errorMessage)
+
+            if let url = fullscreenImageURL {
+                ZStack {
+                    Color.black.opacity(0.92)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            fullscreenImageURL = nil
+                        }
+
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 700, maxHeight: 500)
+                        case .failure:
+                            Image(systemName: "photo")
+                                .font(.system(size: 60))
+                                .foregroundStyle(.white)
+                        default:
+                            ProgressView()
+                        }
+                    }
+
+                    VStack {
+                        HStack {
+                            Spacer()
+
+                            Button {
+                                downloadImage(url: url)
+                            } label: {
+                                if isDownloadingImage {
+                                    ProgressView()
+                                        .frame(width: 30, height: 30)
+                                } else {
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 26))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isDownloadingImage)
+                            .padding(.trailing, 10)
+
+                            Button {
+                                fullscreenImageURL = nil
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 26))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(20)
+
+                        Spacer()
+                    }
+                }
+                .frame(width: 800, height: 600)
+                .transition(.opacity)
+                .zIndex(1)
+            }
         }
     }
 
@@ -244,6 +321,26 @@ struct Chats: View {
         Task {
             await service.sendImage(data: data, convoID: convoID)
             isUploadingImage = false
+        }
+    }
+
+    private func downloadImage(url: URL) {
+        isDownloadingImage = true
+        Task {
+            do {
+                let data = try await CloudinaryUploader.downloadImage(from: url)
+
+                let savePanel = NSSavePanel()
+                savePanel.allowedContentTypes = [.jpeg, .png]
+                savePanel.nameFieldStringValue = url.lastPathComponent.isEmpty ? "image.jpg" : url.lastPathComponent
+
+                if savePanel.runModal() == .OK, let saveURL = savePanel.url {
+                    try data.write(to: saveURL)
+                }
+            } catch {
+                service.errorMessage = error.localizedDescription
+            }
+            isDownloadingImage = false
         }
     }
 
