@@ -37,4 +37,12 @@ struct CloudinaryUploader {
 
         return secureUrl
     }
+
+    static func downloadImage(from url: URL) async throws -> Data {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw NSError(domain: "Cloudinary", code: 2, userInfo: [NSLocalizedDescriptionKey: "Download failed"])
+        }
+        return data
+    }
 }
