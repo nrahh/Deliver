@@ -14,6 +14,8 @@ final class MessagingService: ObservableObject {
     @Published var errorMessage = ""
 
     private var otherUserPublicKeys: [String: Data] = [:]
+    private var refreshTask: Task<Void, Never>?
+    private var activeConvoID: String?
 
     private func otherUserID(in convo: Conversation) -> String? {
         convo.users.first { $0 != currentUserID }
@@ -75,7 +77,10 @@ final class MessagingService: ObservableObject {
                     date: msg.date
                 )
             }
-            messages = decrypted.sorted { $0.date < $1.date }
+            let sorted = decrypted.sorted { $0.date < $1.date }
+            if sorted.map({ $0.id }) != messages.map({ $0.id }) || sorted.map({ $0.message }) != messages.map({ $0.message }) {
+                messages = sorted
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -227,5 +232,28 @@ final class MessagingService: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func setActiveConvo(_ convoID: String?) {
+        activeConvoID = convoID
+    }
+
+    func startAutoRefresh() {
+        stopAutoRefresh()
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self else { return }
+                await self.loadConversations()
+                if let convoID = self.activeConvoID {
+                    await self.loadMessages(convoID: convoID)
+                }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    func stopAutoRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 }
